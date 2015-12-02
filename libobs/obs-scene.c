@@ -302,20 +302,30 @@ static void scene_video_render(void *data, gs_effect_t *effect)
 {
 	struct obs_scene *scene = data;
 	struct obs_scene_item *item;
+	struct obs_scene_item *next;
 
 	pthread_mutex_lock(&scene->mutex);
-
 	item = scene->first_item;
+	if (item)
+		obs_sceneitem_addref(item);
+	pthread_mutex_unlock(&scene->mutex);
 
 	gs_blend_state_push();
 	gs_reset_blend_state();
 
 	while (item) {
+		pthread_mutex_lock(&scene->mutex);
+		next = item->next;
+		if (next)
+			obs_sceneitem_addref(next);
+		pthread_mutex_unlock(&scene->mutex);
+
 		if (obs_source_removed(item->source)) {
 			struct obs_scene_item *del_item = item;
-			item = item->next;
+			item = next;
 
 			obs_sceneitem_remove(del_item);
+			obs_sceneitem_release(del_item);
 			continue;
 		}
 
@@ -329,12 +339,11 @@ static void scene_video_render(void *data, gs_effect_t *effect)
 			gs_matrix_pop();
 		}
 
-		item = item->next;
+		obs_sceneitem_release(item);
+		item = next;
 	}
 
 	gs_blend_state_pop();
-
-	pthread_mutex_unlock(&scene->mutex);
 
 	UNUSED_PARAMETER(effect);
 }
